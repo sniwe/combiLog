@@ -52,7 +52,6 @@ If setup flag bad, run setup before continue.
 
 Keep these files under `${MGMT_DIR}\projMap\`:
 
-- `map.json`
 - `threads\README.md`
 - `threads\resolve-init-thread.ps1`
 - `threads\current-thread.json`
@@ -66,8 +65,7 @@ Keep these files under `${MGMT_DIR}\projMap\`:
 
 ## Map And Thread State
 
-- Canonical project map at `${PROJMAP_DIR}\map.json`.
-- Update map when project code changes.
+- Do not maintain `${PROJMAP_DIR}\map.json` for this project.
 - Keep runtime thread cache in `${PROJMAP_DIR}\threads\`.
 - Keep map delta history in `${PROJMAP_DIR}\state\`.
 
