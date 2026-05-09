@@ -34,10 +34,7 @@ If setup flag bad, run setup before continue.
 
 - Keep project files under `${SRC_DIR}` unless file belongs in `${MGMT_DIR}` or root `AGENTS.md`.
 - Create and keep `${WORKSPACE_ROOT}\.gitignore`.
-- Keep `${MGMT_DIR}\toDo\`, `${MGMT_DIR}\errFix\`, `${MGMT_DIR}\logs\`.
-- `toDo` and `errFix` always keep at least one blank ordinal `.txt` sentinel.
-- Keep `${MGMT_DIR}\toDo\done\` and `${MGMT_DIR}\errFix\fixed\` as manual done areas.
-- Log runtime-visible actions to console and `${MGMT_DIR}\logs\YYMMDD\N.txt` when logger exists.
+- Do not use `${MGMT_DIR}\toDo\`, `${MGMT_DIR}\errFix\`, or `${MGMT_DIR}\logs\` for this project.
 
 ## Source Layout
 
@@ -71,7 +68,7 @@ Keep these files under `${MGMT_DIR}\projMap\`:
 
 ## `.gitignore`
 
-- Ignore generated state, logs, and common junk.
+- Ignore generated state and common junk.
 - Keep source and governed mgmt files tracked.
 
 ## Dynamic Path Rules

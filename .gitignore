@@ -5,10 +5,7 @@ coverage/
 *.log
 .env
 .env.*
-mgmt/logs/
 mgmt/state/
 mgmt/projMap/state/
 mgmt/projMap/threads/current-thread.json
 mgmt/projMap/state/thread-map-deltas.json
-mgmt/toDo/done/
-mgmt/errFix/fixed/
