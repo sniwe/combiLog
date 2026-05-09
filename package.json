@@ -1,0 +1,10 @@
+{
+  "name": "combilog",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Blank page server for combiLog",
+  "scripts": {
+    "start": "node src/backend/server/index.js",
+    "dev": "node src/backend/server/index.js"
+  }
+}
