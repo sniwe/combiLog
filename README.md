@@ -6,6 +6,7 @@ Project root for combiLog.
 
 - `mgmt/`: project governance and thread tracking
 - `src/`: source code
+- `mgmt/projMap/project.txt`: monolithic plain-English project spec with fenced front matter blocks
 
 ## Run
 

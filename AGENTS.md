@@ -1,4 +1,4 @@
-# AGENTS.md
+﻿# AGENTS.md
 
 ## Scope And Paths
 
@@ -54,15 +54,30 @@ If setup flag bad, run setup before continue.
 - Use only `ctx.deps` for side effects and async work.
 - If a needed capability is missing in `deps`, state a brief Dep Proposal first.
 
+## Logging Pipeline
+
+- Use the shared logger in `${PUBLIC_DIR}\logger.js` for all new runtime logging.
+- Backend code should create or receive a logger via `deps.logger` and emit structured events, states, and errors instead of raw `console.log` calls.
+- Browser code should use `createBrowserTransport()` plus a browser logger instance so logs are batched to `POST /api/logs` and echoed in the launching terminal.
+- Keep terminal output as the canonical runtime log stream for this app.
+- Keep a single run log at `${MGMT_DIR}\logs\current-run.log`; `npm start` clears it at startup and appends the current run as logs stream in.
+- Log at the highest useful boundary, then add deeper logs only when they change control flow, mutate state, or throw.
+- Do not log raw buffers, request bodies, DOM trees, or injected dependency objects; log safe summaries only.
+- Prefer `logCtx(ctx, logger, meta)` or logger boundary helpers when authoring new ctx-based functions.
+- If new runtime-visible logging is added, wire it through the existing browser relay and server terminal print path rather than adding a new sink.
+
 ## Dev Tunnel
 
 - Development uses Cloudflare free quick tunnels through `cloudflared`.
 - Use `cloudflared tunnel --url http://localhost:PORT` to expose the local dev server.
-- Assume `cloudflared` is on `PATH`, or pass an explicit binary path in module data.
+- Use the installed binary path or `PATH`; on this machine the confirmed install is `C:\Program Files (x86)\cloudflared\cloudflared.exe`.
 - Put tunnel orchestration in `src/backend/dev-tunnel/`.
-- Module must capture and surface the dynamic `trycloudflare.com` URL.
+- Module must capture and surface only the dynamic `trycloudflare.com` URL in terminal output.
+- Do not surface routine `cloudflared` chatter in terminal.
 - Keep tunnel logic dev-only. No production tunnel config for this project.
 - When server runs, launch tunnel automatically from local URL without extra user step.
+- Fix tunnel launch by using the real binary. Do not suppress missing-binary failures with no-op or disabled tunnel code.
+- Prefer the documented compatible tunnel transport (`http2`) when it makes launch reliable on this machine. Do not replace it with a no-op fallback.
 
 ## Blank Page Server
 
@@ -86,6 +101,35 @@ Keep these files under `${MGMT_DIR}\projMap\`:
 - Keep runtime thread cache in `${PROJMAP_DIR}\threads\`.
 - Keep current thread in `current-thread.json`.
 - Keep all project threads in `all-threads.json`.
+
+## Plain English Project File
+
+- Project intent lives in `${PROJMAP_DIR}\project.txt`.
+- That file is the monolithic plain-english project spec for autonomous AI agents.
+- The file uses nested hierarchical blocks where nesting means subordinate relationship.
+- Front matter lives in multiline fenced code blocks placed above each block body.
+- The front matter fence and its contents inherit the indent of the block they annotate.
+- Nested block front matter must stay visually aligned with that nested block.
+- Each block's front matter must stay inside its own fenced code block.
+- Front matter is bottom-up: deepest applicable nesting carries the most detail.
+- Superordinate blocks show only the details not already covered by deeper nesting.
+- Do not duplicate parent block values in child block front matter.
+- Keep child block front matter focused on child-specific detail, UI refs, and deps only.
+- AI may edit only front matter in `project.txt`.
+- AI must never touch non-front matter content in `project.txt`.
+- Developer owns all non-front matter content and keeps it authoritative.
+- Front matter shape will be defined in future prompts and must be followed exactly once provided.
+- Front matter may contain implementation specifics for generated code, including data, UI selectors, styling params, and deps for that block.
+- `data` in front matter is not style data. It refers to backend data collections for the block under `${WORKSPACE_ROOT}\src\backend` as SQL-like `.json` stores associated with the block.
+- Leave `data` blank until those backend collections are actually implemented. Once implemented, include the actual collection path and schema properties needed by the block.
+- Apply data hiding to front matter: keep internal implementation details contained there, expose only the minimal safe behavior to the rest of the file.
+- Do not leak block internals into non-front matter content.
+
+## Thread Context
+
+- When current Codex thread context usage reaches 90%, compact context immediately before continuing work.
+- Compact by preserving active project rules, current task state, latest file changes, and unresolved decisions.
+- Drop stale exploration detail, duplicate logs, and completed intermediate checks first.
 
 ## `.gitignore`
 

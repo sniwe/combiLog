@@ -1,7 +1,17 @@
 const { spawn } = require('child_process');
+const fs = require('fs/promises');
+const path = require('path');
+const { createLogger } = require('../../public/logger');
 
 const TRYCLOUDFLARE_URL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com\b/i;
-const DEFAULT_BINARY = 'cloudflared';
+const DEFAULT_BINARY = 'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe';
+const ALT_BINARY = 'C:\\Program Files\\cloudflared\\cloudflared.exe';
+
+const DEFAULT_LOGGER = createLogger({
+  data: {
+    module: 'backend/dev-tunnel',
+  },
+});
 
 function resolveOriginUrl(ctx) {
   const { data = {} } = ctx;
@@ -23,16 +33,77 @@ function extractTunnelUrl(ctx) {
   return match ? match[0] : null;
 }
 
-function startDevTunnel(ctx) {
+async function pathExists(ctx) {
+  const { data = {}, deps = {} } = ctx;
+  const fsApi = deps.fs || fs;
+  try {
+    await fsApi.access(data.path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveBinaryPath(ctx) {
+  const { data = {}, deps = {} } = ctx;
+  const candidates = [];
+  if (data.binary) {
+    candidates.push(data.binary);
+  }
+  candidates.push(
+    DEFAULT_BINARY,
+    ALT_BINARY,
+    'cloudflared'
+  );
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    if (path.isAbsolute(candidate)) {
+      if (await pathExists({
+        data: { path: candidate },
+        deps,
+      })) {
+        return candidate;
+      }
+      continue;
+    }
+
+    return candidate;
+  }
+
+  throw new Error('cloudflared not found. Install Cloudflare cloudflared or pass binary path.');
+}
+
+async function startDevTunnel(ctx) {
   const { data = {}, deps = {} } = ctx;
   const spawnFn = deps.spawn || spawn;
   const onUrl = deps.onUrl || null;
   const onLog = deps.onLog || null;
   const onError = deps.onError || null;
   const onExit = deps.onExit || null;
+  const log = deps.logger || DEFAULT_LOGGER;
   const originUrl = resolveOriginUrl({ data });
-  const binary = data.binary || DEFAULT_BINARY;
-  const args = ['tunnel', '--url', originUrl];
+  const binary = await resolveBinaryPath({
+    data: {
+      binary: data.binary,
+    },
+    deps,
+  });
+
+  log.state({
+    phase: 'start',
+    event: 'spawn',
+    data: {
+      originUrl,
+      binary,
+      protocol: data.protocol || 'http2',
+    },
+  });
+
+  const protocol = data.protocol || 'http2';
+  const args = ['tunnel', '--no-autoupdate', '--protocol', protocol, '--url', originUrl];
   const child = spawnFn(binary, args, {
     cwd: data.cwd || deps.cwd || '.',
     windowsHide: true,
@@ -52,6 +123,14 @@ function startDevTunnel(ctx) {
     const remainder = lines.pop() || '';
 
     for (const line of lines) {
+      log.event({
+        phase: 'stream',
+        event: `tunnel.${bufferKey}`,
+        data: {
+          originUrl,
+          line,
+        },
+      });
       if (onLog) {
         onLog({
           data: {
@@ -71,6 +150,14 @@ function startDevTunnel(ctx) {
 
       if (extracted && !tunnelUrl) {
         tunnelUrl = extracted;
+        log.state({
+          phase: 'discover',
+          event: 'tunnel-url',
+          data: {
+            originUrl,
+            url: tunnelUrl,
+          },
+        });
         if (onUrl) {
           onUrl({
             data: {
@@ -111,6 +198,14 @@ function startDevTunnel(ctx) {
   }
 
   child.on('error', (error) => {
+    log.error({
+      phase: 'error',
+      event: 'spawn-error',
+      data: {
+        originUrl,
+        error,
+      },
+    });
     if (onError) {
       onError({
         data: {
@@ -123,6 +218,16 @@ function startDevTunnel(ctx) {
   });
 
   child.on('exit', (code, signal) => {
+    log.state({
+      phase: 'exit',
+      event: 'tunnel-exit',
+      data: {
+        originUrl,
+        code,
+        signal,
+        tunnelUrl,
+      },
+    });
     if (onExit) {
       onExit({
         data: {
@@ -140,6 +245,14 @@ function startDevTunnel(ctx) {
     child,
     originUrl,
     stop() {
+      log.state({
+        phase: 'stop',
+        event: 'tunnel-stop',
+        data: {
+          originUrl,
+          tunnelUrl,
+        },
+      });
       if (!child.killed) {
         child.kill();
       }
@@ -162,6 +275,15 @@ function stopDevTunnel(ctx) {
     child.kill();
   }
 
+  const log = ctx.deps && ctx.deps.logger ? ctx.deps.logger : DEFAULT_LOGGER;
+  log.state({
+    phase: 'stop',
+    event: 'tunnel-stop',
+    data: {
+      killed: true,
+    },
+  });
+
   return true;
 }
 
@@ -170,4 +292,5 @@ module.exports = {
   resolveOriginUrl,
   startDevTunnel,
   stopDevTunnel,
+  resolveBinaryPath,
 };

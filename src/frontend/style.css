@@ -2,5 +2,148 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: #ffffff;
+  background: #f8f6f1;
+}
+
+body {
+  padding: 0;
+}
+
+#stage {
+  margin: 15px 20px 0;
+}
+
+#inv-button {
+  display: block;
+  margin: 0 0 5px auto;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: #c0c0c0;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 15px;
+  text-align: center;
+  cursor: pointer;
+}
+
+#audio-button {
+  display: none;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: #c0c0c0;
+  cursor: pointer;
+}
+
+#box {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  height: max-content;
+  padding: 10px 20px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  background: #c0c0c0;
+}
+
+#invs {
+  width: 100%;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.inv-item {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  border: 1px solid rgba(47, 47, 47, 0.1);
+  background: rgba(248, 246, 241, 0.35);
+}
+
+.inv-item--idle-targeting {
+  border-color: rgba(47, 47, 47, 0.16);
+}
+
+.inv-item--targeted {
+  border-color: rgba(47, 47, 47, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(47, 47, 47, 0.12);
+}
+
+.inv-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.aud-play-ind {
+  display: inline-flex;
+  width: max-content;
+  height: max-content;
+  align-items: center;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  background: rgba(248, 246, 241, 0.18);
+  color: #2f2f2f;
+  font-size: 12px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.aud-play-ind[data-state='playing'] {
+  background: rgba(248, 246, 241, 0.32);
+}
+
+.aud-play-ind[data-state='empty'] {
+  opacity: 0.55;
+}
+
+.inv-search {
+  flex: 0 1 max-content;
+  min-width: 30px;
+  width: max-content;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 8px;
+  background: rgba(248, 246, 241, 0.45);
+  color: #2f2f2f;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.audEp-tag {
+  border: 0;
+  border-radius: 5px;
+  padding: 5px 8px;
+  background: #f8f6f1;
+  color: #2f2f2f;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.audEp-tag--plus {
+  min-width: 24px;
+  padding-inline: 7px;
+}
+
+.inv-tags--linked .audEp-tag--selected {
+  background: rgba(248, 246, 241, 0.2);
+  cursor: default;
+}
+
+.inv-tags[hidden] {
+  display: none;
 }
