@@ -1,0 +1,26 @@
+//inv add btn
+
+style & pos
+    off-white background
+    5*5px above the list
+    "+" icon
+    5px gap between btn and list
+    appears above right top edge of list
+        visible even when list is collapsed
+        shows on page even if no inv collection items yet
+
+action(s)
+    click
+        opens file picker, filtered to audio files
+        user selects audio
+            audio uploaded to C:\Users\Qub\combiLog\src\backend\media
+            audEp entry created on C:\Users\Qub\combiLog\src\backend\collections\audEps.json
+                audEp item schema:
+                    {
+                        "_id": "audEp-dev001-001",
+                        "name": "'the'_stories.mp3",
+                        "mimeType": "audio/mpeg",
+                        "sizeBytes": 994176,
+                        "fileName": "audEp-dev001-001.mp3",
+                        "mediaUrl": "/media/audEp-dev001-001.mp3"
+                    }

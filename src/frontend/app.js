@@ -1,952 +1,353 @@
 (function () {
-  const loggerApi = window.combiLogLogger || null;
-  const browserTransport = loggerApi
+  'use strict';
+
+  const loggerApi = typeof window !== 'undefined' ? window.combiLogLogger : null;
+  const browserTransport = loggerApi && typeof loggerApi.createBrowserTransport === 'function'
     ? loggerApi.createBrowserTransport({
         data: {
           endpoint: '/api/logs',
-          batchSize: 8,
-          flushDelayMs: 25,
         },
       })
     : null;
-  const appLogger = loggerApi
+  const appLogger = loggerApi && typeof loggerApi.createLogger === 'function'
     ? loggerApi.createLogger({
         data: {
           module: 'frontend/app',
         },
-        deps: {
-          transport: browserTransport,
-        },
+        deps: browserTransport ? { transport: browserTransport } : {},
       })
     : null;
-  const state = {
-    audEps: [],
-    invs: [],
-    searchCollapsed: false,
-    targetedInvIndex: null,
-    activeAudEpId: null,
-    activeInvId: null,
-  };
 
-  const stage = document.getElementById('stage');
-  const box = document.getElementById('box');
-  const invButton = document.getElementById('inv-button');
-  const audioButton = document.getElementById('audio-button');
-  const audioPlayer = document.createElement('audio');
-  audioPlayer.preload = 'auto';
-  audioPlayer.hidden = true;
-  document.body.appendChild(audioPlayer);
-
-  if (appLogger) {
-    appLogger.state({
-      function: 'bootstrap',
-      phase: 'start',
-      event: 'load',
-      data: {
-        stage: 'frontend',
-      },
-    });
+  function getRoot(ctx) {
+    const { deps = {} } = ctx;
+    return deps.document.getElementById('app');
   }
 
-  window.addEventListener('error', (event) => {
-    reportError('window', 'runtime-error', event.error || new Error(event.message || 'window error'), {
-      message: event.message,
-      source: event.filename,
-      line: event.lineno,
-      column: event.colno,
+  async function loadInvs(ctx) {
+    const { deps = {} } = ctx;
+    const response = await deps.fetch('/api/invs', {
+      credentials: 'same-origin',
     });
-  });
 
-  window.addEventListener('unhandledrejection', (event) => {
-    reportError('window', 'unhandledrejection', event.reason instanceof Error ? event.reason : new Error(String(event.reason)), {
-      reason: event.reason,
-    });
-  });
-
-  function stripExtension(name) {
-    return String(name || '').replace(/\.[^.]+$/, '') || 'audio';
-  }
-
-  function trace(event, details) {
-    if (!appLogger) {
-      if (typeof console !== 'undefined' && typeof console.log === 'function') {
-        console.log(`[combiLog] ${event}`, details);
-      }
-      return;
-    }
-
-    appLogger.event({
-      function: 'trace',
-      phase: 'event',
-      event,
-      data: details,
-    });
-  }
-
-  function reportError(functionName, event, error, details) {
-    if (!appLogger) {
-      if (typeof console !== 'undefined' && typeof console.error === 'function') {
-        console.error(error);
-      }
-      return;
-    }
-
-    appLogger.error({
-      function: functionName,
-      phase: 'error',
-      event,
-      data: {
-        ...(details || {}),
-        error,
-      },
-    });
-  }
-
-  function logBoundary(functionName, phase, event, data) {
-    if (!appLogger) {
-      return;
-    }
-
-    appLogger.state({
-      function: functionName,
-      phase,
-      event,
-      data,
-    });
-  }
-
-  function clearElement(element) {
-    while (element.firstChild) {
-      element.removeChild(element.firstChild);
-    }
-  }
-
-  async function fetchJson(path, options) {
-    const response = await fetch(path, options);
-    const body = await response.json();
     if (!response.ok) {
-      throw new Error(body && body.error ? body.error : `Request failed: ${response.status}`);
-    }
-    return body;
-  }
-
-  function getLinkedAudEp(inv) {
-    const audEpRef = Array.isArray(inv.audEpRefs)
-      ? inv.audEpRefs[0]
-      : typeof inv.audEpRef === 'string'
-        ? inv.audEpRef
-        : null;
-    return state.audEps.find((audEp) => audEp._id === audEpRef) || null;
-  }
-
-  function getAudEpPlaybackSrc(audEp) {
-    if (!audEp) {
-      return '';
+      throw new Error(`Failed to load invs: ${response.status}`);
     }
 
-    return String(audEp.mediaUrl || audEp.dataUrl || '').trim();
+    const payload = await response.json();
+    return Array.isArray(payload.invs) ? payload.invs : [];
   }
 
-  function normalizeAudioSrc(src) {
-    const value = String(src || '').trim();
-    if (!value) {
-      return '';
-    }
-
-    try {
-      return new URL(value, window.location.href).href;
-    } catch (error) {
-      return value;
-    }
-  }
-
-  function formatPlaybackTime(seconds) {
-    const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
-    const minutes = Math.floor(safeSeconds / 60);
-    const wholeSeconds = Math.floor(safeSeconds % 60);
-    return `${String(minutes).padStart(2, '0')}:${String(wholeSeconds).padStart(2, '0')}`;
-  }
-
-  function getRenderedInvs() {
-    return state.invs.length
-      ? state.invs
-      : [
-          {
-            _id: 'inv-dev001-001',
-            audEpRefs: [],
-            lastPlayTs: 0,
-          },
-        ];
-  }
-
-  function getTargetableInvCount() {
-    return getRenderedInvs().length;
-  }
-
-  function getTargetedInv() {
-    if (state.targetedInvIndex === null) {
-      return null;
-    }
-
-    return getRenderedInvs()[state.targetedInvIndex] || null;
-  }
-
-  function getInvPlaybackTs(inv) {
-    const playbackTs = Number(inv && inv.lastPlayTs);
-    return Number.isFinite(playbackTs) && playbackTs > 0 ? playbackTs : 0;
-  }
-
-  function setInvPlaybackTs(invId, playbackTs) {
-    const normalizedTs = Math.max(0, Number(playbackTs) || 0);
-    const inv = state.invs.find((item) => item._id === invId);
-    if (inv) {
-      inv.lastPlayTs = normalizedTs;
-    }
-    return normalizedTs;
-  }
-
-  async function persistInvPlaybackTs(invId, playbackTs) {
-    logBoundary('persistInvPlaybackTs', 'start', 'persist', {
-      invId,
-      playbackTs,
+  async function loadAudEps(ctx) {
+    const { deps = {} } = ctx;
+    const response = await deps.fetch('/api/audEps', {
+      credentials: 'same-origin',
     });
-    trace('persistInvPlaybackTs:request', { invId, playbackTs });
-    await fetchJson('/api/invs', {
+
+    if (!response.ok) {
+      throw new Error(`Failed to load audEps: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    return Array.isArray(payload.audEps) ? payload.audEps : [];
+  }
+
+  async function uploadAudio(ctx) {
+    const { data = {}, deps = {} } = ctx;
+    const file = data.file;
+
+    if (!file) {
+      throw new Error('No audio file selected');
+    }
+
+    const response = await deps.fetch('/api/audio-upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Audio-Owner': 'dev001',
+        'X-Audio-Name': encodeURIComponent(file.name || 'audio'),
+        'X-Audio-Size': String(file.size || 0),
+      },
+      credentials: 'same-origin',
+      body: await file.arrayBuffer(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to upload audio: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    return payload && payload.entry ? payload.entry : null;
+  }
+
+  async function createInv(ctx) {
+    const { data = {}, deps = {} } = ctx;
+    const audEpRef = String(data.audEpRef || '').trim();
+
+    if (!audEpRef) {
+      throw new Error('No audEp reference provided');
+    }
+
+    const response = await deps.fetch('/api/invs', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'same-origin',
       body: JSON.stringify({
-        invId,
-        lastPlayTs: Math.max(0, Number(playbackTs) || 0),
         ownerId: 'dev001',
+        audEpRef,
       }),
     });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create inv: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    return payload && payload.entry ? payload.entry : null;
   }
 
-  async function persistActivePlaybackTs() {
-    logBoundary('persistActivePlaybackTs', 'start', 'persist-active', {
-      activeInvId: state.activeInvId,
-    });
-    if (!state.activeInvId) {
-      trace('persistActivePlaybackTs:skip', { reason: 'no-active-inv' });
+  function renderEmptyState(ctx) {
+    const { deps = {} } = ctx;
+    const empty = deps.document.createElement('div');
+    empty.className = 'inv-list inv-list--empty';
+    return empty;
+  }
+
+  function renderAddButton(ctx) {
+    const { deps = {} } = ctx;
+    const button = deps.document.createElement('button');
+    button.className = 'inv-add-btn';
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Add inv');
+    button.textContent = '+';
+    return button;
+  }
+
+  function openAudioPicker(ctx) {
+    const { data = {} } = ctx;
+    const fileInput = data.fileInput;
+
+    if (!fileInput) {
       return;
     }
 
-    const inv = state.invs.find((item) => item._id === state.activeInvId);
-    if (!inv) {
-      trace('persistActivePlaybackTs:skip', { reason: 'missing-inv', activeInvId: state.activeInvId });
+    if (typeof fileInput.showPicker === 'function') {
+      fileInput.showPicker();
       return;
     }
 
-    const playbackTs = setInvPlaybackTs(inv._id, audioPlayer.currentTime);
-    trace('persistActivePlaybackTs:commit', {
-      invId: inv._id,
-      playbackTs,
-      currentTime: audioPlayer.currentTime,
-      paused: audioPlayer.paused,
-    });
-    await persistInvPlaybackTs(inv._id, playbackTs);
+    fileInput.click();
   }
 
-  async function startInvPlayback(inv, audEp, playbackTsOverride) {
-    logBoundary('startInvPlayback', 'start', 'playback-start', {
-      invId: inv && inv._id,
-      audEpId: audEp && audEp._id,
-      playbackTsOverride,
-    });
-    const playbackTs = Number.isFinite(playbackTsOverride)
-      ? Math.max(0, playbackTsOverride)
-      : getInvPlaybackTs(inv);
-    const playbackSrc = getAudEpPlaybackSrc(audEp);
-    const normalizedPlaybackSrc = normalizeAudioSrc(playbackSrc);
-    const currentPlaybackSrc = normalizeAudioSrc(audioPlayer.currentSrc || audioPlayer.src);
+  function renderItem(ctx) {
+    const { data = {}, deps = {} } = ctx;
+    const entry = data.entry || {};
+    const audEps = Array.isArray(data.audEps) ? data.audEps : [];
+    const audEpRef = Array.isArray(entry.audEpRefs) && entry.audEpRefs.length
+      ? entry.audEpRefs[0]
+      : typeof entry.audEpRef === 'string'
+        ? entry.audEpRef
+        : '';
+    const linkedAudEp = audEps.find((audEp) => audEp && audEp._id === audEpRef) || null;
+    const item = deps.document.createElement('li');
+    item.className = 'inv-item';
 
-    trace('startInvPlayback:begin', {
-      invId: inv && inv._id,
-      audEpId: audEp && audEp._id,
-      playbackTs,
-      currentTime: audioPlayer.currentTime,
-      currentSrc: currentPlaybackSrc,
-      targetSrc: normalizedPlaybackSrc,
-      paused: audioPlayer.paused,
-      readyState: audioPlayer.readyState,
-    });
-    state.activeInvId = inv._id;
-    state.activeAudEpId = audEp._id;
+    const title = deps.document.createElement('div');
+    title.className = 'inv-item__title';
+    title.textContent = linkedAudEp ? linkedAudEp.name : entry.name || entry._id || 'untitled audEp';
+    item.appendChild(title);
 
-    if (normalizedPlaybackSrc && normalizedPlaybackSrc !== currentPlaybackSrc) {
-      trace('startInvPlayback:src-change', {
-        from: currentPlaybackSrc,
-        to: normalizedPlaybackSrc,
-      });
-      audioPlayer.src = playbackSrc;
-      await new Promise((resolve) => {
-        audioPlayer.addEventListener(
-          'loadedmetadata',
-          () => {
-            trace('startInvPlayback:loadedmetadata', {
-              duration: audioPlayer.duration,
-              readyState: audioPlayer.readyState,
-            });
-            resolve();
-          },
-          { once: true }
-        );
-      });
-    } else {
-      trace('startInvPlayback:src-reuse', {
-        src: currentPlaybackSrc,
-      });
-    }
-
-    await seekAudioPlayerToTs(playbackTs);
-    await audioPlayer.play();
-    trace('startInvPlayback:play-called', {
-      currentTime: audioPlayer.currentTime,
-      paused: audioPlayer.paused,
-    });
-    logBoundary('startInvPlayback', 'done', 'playback-start', {
-      invId: inv && inv._id,
-      audEpId: audEp && audEp._id,
-      currentTime: audioPlayer.currentTime,
-    });
+    return item;
   }
 
-  async function syncAudioPlayerToInv(inv) {
-    logBoundary('syncAudioPlayerToInv', 'start', 'sync', {
-      invId: inv && inv._id,
-    });
-    const linkedAudEp = getLinkedAudEp(inv);
-    if (!linkedAudEp) {
-      trace('syncAudioPlayerToInv:skip', { invId: inv && inv._id, reason: 'unlinked' });
-      return;
+  function renderList(ctx) {
+    const { data = {}, deps = {} } = ctx;
+    const invs = Array.isArray(data.invs) ? data.invs : [];
+    const audEps = Array.isArray(data.audEps) ? data.audEps : [];
+
+    const list = deps.document.createElement('div');
+    list.className = 'inv-list';
+
+    if (!invs.length) {
+      return list;
     }
 
-    if (state.activeInvId && state.activeInvId !== inv._id && !audioPlayer.paused) {
-      trace('syncAudioPlayerToInv:skip', {
-        invId: inv._id,
-        activeInvId: state.activeInvId,
-        reason: 'active-playback-other-inv',
-      });
-      return;
+    const items = deps.document.createElement('ul');
+    items.className = 'inv-list__items';
+
+    for (const entry of invs) {
+      items.appendChild(renderItem({
+        data: {
+          entry,
+          audEps,
+        },
+        deps,
+      }));
     }
 
-    const playbackTs = getInvPlaybackTs(inv);
-    const playbackSrc = getAudEpPlaybackSrc(linkedAudEp);
-    if (!playbackSrc) {
-      trace('syncAudioPlayerToInv:skip', { invId: inv._id, reason: 'missing-src' });
-      return;
-    }
-
-    const normalizedPlaybackSrc = normalizeAudioSrc(playbackSrc);
-    const currentPlaybackSrc = normalizeAudioSrc(audioPlayer.currentSrc || audioPlayer.src);
-    trace('syncAudioPlayerToInv:begin', {
-      invId: inv._id,
-      audEpId: linkedAudEp._id,
-      playbackTs,
-      currentSrc: currentPlaybackSrc,
-      targetSrc: normalizedPlaybackSrc,
-      paused: audioPlayer.paused,
-      readyState: audioPlayer.readyState,
-    });
-
-    if (normalizedPlaybackSrc && normalizedPlaybackSrc !== currentPlaybackSrc) {
-      trace('syncAudioPlayerToInv:src-change', {
-        from: currentPlaybackSrc,
-        to: normalizedPlaybackSrc,
-      });
-      audioPlayer.src = playbackSrc;
-      await new Promise((resolve) => {
-        audioPlayer.addEventListener(
-          'loadedmetadata',
-          () => {
-            trace('syncAudioPlayerToInv:loadedmetadata', {
-              duration: audioPlayer.duration,
-              readyState: audioPlayer.readyState,
-            });
-            resolve();
-          },
-          { once: true }
-        );
-      });
-    } else {
-      trace('syncAudioPlayerToInv:src-reuse', {
-        src: currentPlaybackSrc,
-      });
-    }
-
-    await seekAudioPlayerToTs(playbackTs);
-    logBoundary('syncAudioPlayerToInv', 'done', 'sync', {
-      invId: inv._id,
-      audEpId: linkedAudEp._id,
-      playbackTs,
-    });
+    list.appendChild(items);
+    return list;
   }
 
-  async function seekAudioPlayerToTs(playbackTs) {
-    logBoundary('seekAudioPlayerToTs', 'start', 'seek', {
-      playbackTs,
-    });
-    const targetTs = Number.isFinite(playbackTs) && playbackTs > 0 ? playbackTs : 0;
-    const boundedTs = audioPlayer.duration && targetTs >= audioPlayer.duration ? 0 : targetTs;
-    trace('seekAudioPlayerToTs:request', {
-      targetTs,
-      boundedTs,
-      currentTime: audioPlayer.currentTime,
-      duration: audioPlayer.duration,
-      seeking: audioPlayer.seeking,
-    });
-    if (Math.abs(audioPlayer.currentTime - boundedTs) < 0.01 && !audioPlayer.seeking) {
-      trace('seekAudioPlayerToTs:skip', { reason: 'already-at-position' });
-      return;
-    }
+  function renderShell(ctx) {
+    const { deps = {} } = ctx;
+    const root = getRoot(ctx);
+    root.textContent = '';
 
-    await new Promise((resolve) => {
-      const handleSeeked = () => {
-        trace('seekAudioPlayerToTs:seeked', {
-          currentTime: audioPlayer.currentTime,
-          duration: audioPlayer.duration,
-        });
-        resolve();
-      };
+    const frame = deps.document.createElement('div');
+    frame.className = 'inv-shell';
+    root.appendChild(frame);
 
-      audioPlayer.addEventListener('seeked', handleSeeked, { once: true });
-      audioPlayer.currentTime = boundedTs;
-      trace('seekAudioPlayerToTs:set-currentTime', {
-        boundedTs,
-        postSetCurrentTime: audioPlayer.currentTime,
-        seeking: audioPlayer.seeking,
+    const addButton = renderAddButton({
+      deps,
+    });
+    frame.appendChild(addButton);
+
+    const fileInput = deps.document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'audio/*';
+    fileInput.tabIndex = -1;
+    fileInput.setAttribute('aria-hidden', 'true');
+    fileInput.style.position = 'absolute';
+    fileInput.style.left = '-9999px';
+    fileInput.style.width = '1px';
+    fileInput.style.height = '1px';
+    fileInput.style.opacity = '0';
+    frame.appendChild(fileInput);
+
+    addButton.addEventListener('click', () => {
+      openAudioPicker({
+        data: {
+          fileInput,
+        },
       });
-      if (!audioPlayer.seeking) {
-        queueMicrotask(() => {
-          if (!audioPlayer.seeking) {
-            trace('seekAudioPlayerToTs:microtask-resolve', {
-              currentTime: audioPlayer.currentTime,
-            });
-            resolve();
-          }
-        });
-      }
     });
-    logBoundary('seekAudioPlayerToTs', 'done', 'seek', {
-      boundedTs,
-      currentTime: audioPlayer.currentTime,
+
+    return {
+      frame,
+      addButton,
+      fileInput,
+    };
+  }
+
+  async function initApp(ctx) {
+    const { deps = {} } = ctx;
+    const logger = appLogger || {
+      state() {},
+      error() {},
+    };
+    const shell = renderShell(ctx);
+
+    logger.state({
+      phase: 'enter',
+      event: 'init',
     });
-  }
 
-  function updatePlaybackIndicator() {
-    render();
-  }
-
-  function syncActivePlaybackTime() {
-    if (!state.activeInvId || audioPlayer.paused) {
-      render();
-      return;
-    }
-
-    const inv = state.invs.find((item) => item._id === state.activeInvId);
-    if (inv) {
-      inv.lastPlayTs = audioPlayer.currentTime;
-    }
-    render();
-  }
-
-  function handlePlaybackEnded() {
-    if (!state.activeInvId) {
-      render();
-      return;
-    }
-
-    const inv = state.invs.find((item) => item._id === state.activeInvId);
-    if (inv) {
-      const playbackTs = setInvPlaybackTs(inv._id, audioPlayer.currentTime);
-      persistInvPlaybackTs(inv._id, playbackTs).catch((error) => {
-        reportError('handlePlaybackEnded', 'persistInvPlaybackTs:error', error);
+    try {
+      const [audEps, invs] = await Promise.all([
+        loadAudEps({ deps }),
+        loadInvs({ deps }),
+      ]);
+      const list = renderList({
+        data: {
+          audEps,
+          invs,
+        },
+        deps,
       });
-    }
-
-    state.activeInvId = null;
-    state.activeAudEpId = null;
-    render();
-  }
-
-  function handlePlaybackPaused() {
-    logBoundary('handlePlaybackPaused', 'state', 'pause', {
-      activeInvId: state.activeInvId,
-      activeAudEpId: state.activeAudEpId,
-    });
-    trace('audio:event:pause', {
-      activeInvId: state.activeInvId,
-      activeAudEpId: state.activeAudEpId,
-      currentTime: audioPlayer.currentTime,
-      paused: audioPlayer.paused,
-    });
-    if (!state.activeInvId) {
-      render();
-      return;
-    }
-
-    persistActivePlaybackTs().catch((error) => {
-      reportError('handlePlaybackPaused', 'persistActivePlaybackTs:error', error);
-    });
-    render();
-  }
-
-  audioPlayer.addEventListener('timeupdate', syncActivePlaybackTime);
-  audioPlayer.addEventListener('play', updatePlaybackIndicator);
-  audioPlayer.addEventListener('pause', handlePlaybackPaused);
-  audioPlayer.addEventListener('ended', handlePlaybackEnded);
-
-  function openAudioPicker(onPicked) {
-    logBoundary('openAudioPicker', 'start', 'pick', {});
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'audio/*';
-    input.style.display = 'none';
-    document.body.appendChild(input);
-    input.addEventListener(
-      'change',
-      async () => {
-        const file = input.files && input.files[0];
-        input.remove();
+      shell.frame.appendChild(list);
+      shell.fileInput.addEventListener('change', async () => {
+        const file = shell.fileInput.files && shell.fileInput.files[0];
         if (!file) {
           return;
         }
 
         try {
-          const entry = await uploadAudio(file);
-          state.audEps.push(entry);
-          state.searchCollapsed = true;
-          render();
-          await onPicked();
-        } catch (error) {
-          reportError('openAudioPicker', 'uploadAudio:error', error);
-        }
-      },
-      { once: true }
-    );
-    input.click();
-  }
-
-  function createSearchInput(inv, index) {
-    const searchInput = document.createElement('input');
-    searchInput.type = 'search';
-    searchInput.id = index === 0 ? 'searchInput' : '';
-    searchInput.className = 'inv-search';
-    searchInput.placeholder = 'Search audio';
-    searchInput.value = '';
-    searchInput.addEventListener('input', () => {
-      applySearchFilter(searchInput);
-    });
-    return searchInput;
-  }
-
-  function applySearchFilter(searchInput) {
-    const query = String(searchInput.value || '').trim().toLowerCase();
-    const item = searchInput.closest('.inv-item');
-    if (!item) {
-      return;
-    }
-
-    const tags = item.querySelector('.inv-tags');
-    if (!tags) {
-      return;
-    }
-
-    for (const button of tags.querySelectorAll('.audEp-tag')) {
-      if (button.classList.contains('audEp-tag--plus') || button.classList.contains('audEp-tag--selected')) {
-        button.hidden = false;
-        continue;
-      }
-
-      const label = String(button.dataset.audEpName || '').toLowerCase();
-      button.hidden = query ? !label.includes(query) : false;
-    }
-  }
-
-  function renderInvTags(inv, index) {
-    const tags = document.createElement('div');
-    tags.className = 'inv-tags';
-    if (index === 0) {
-      tags.id = 'audEpTags';
-    }
-
-    const linkedAudEp = getLinkedAudEp(inv);
-    if (linkedAudEp) {
-      tags.classList.add('inv-tags--linked');
-      const selected = document.createElement('button');
-      selected.type = 'button';
-      selected.className = 'audEp-tag audEp-tag--selected';
-      selected.dataset.audEpName = linkedAudEp.name;
-      selected.textContent = stripExtension(linkedAudEp.name);
-      selected.disabled = true;
-      tags.appendChild(selected);
-    } else {
-      if (!state.searchCollapsed) {
-        const searchInput = createSearchInput(inv, index);
-        tags.appendChild(searchInput);
-      }
-
-      for (const audEp of state.audEps) {
-        const tag = document.createElement('button');
-        tag.type = 'button';
-        tag.className = 'audEp-tag';
-        tag.dataset.audEpName = audEp.name;
-        tag.textContent = stripExtension(audEp.name);
-        tag.addEventListener('click', async () => {
-          await linkAudioToInv(inv._id, audEp._id);
-        });
-        tags.appendChild(tag);
-      }
-
-      const plus = document.createElement('button');
-      plus.type = 'button';
-      plus.className = 'audEp-tag audEp-tag--plus';
-      plus.textContent = '+';
-      plus.addEventListener('click', () => {
-        openAudioPicker(loadState);
-      });
-      tags.appendChild(plus);
-    }
-
-    const playInd = document.createElement('span');
-    playInd.className = 'aud-play-ind';
-    if ((state.targetedInvIndex === null && index === 0) || state.targetedInvIndex === index) {
-      playInd.id = 'audPlayInd';
-    }
-    if (linkedAudEp) {
-      playInd.hidden = false;
-      const isActive = state.activeInvId === inv._id && state.activeAudEpId === linkedAudEp._id;
-      const playbackTs = isActive && !audioPlayer.paused ? audioPlayer.currentTime : getInvPlaybackTs(inv);
-      playInd.dataset.state = isActive && !audioPlayer.paused ? 'playing' : 'idle';
-      playInd.textContent = formatPlaybackTime(playbackTs);
-    } else {
-      playInd.hidden = true;
-    }
-    tags.appendChild(playInd);
-
-    return tags;
-  }
-
-  function renderInvItem(inv, index) {
-    const item = document.createElement('article');
-    item.className = 'inv-item';
-    if (state.targetedInvIndex === index) {
-      item.classList.add('inv-item--targeted');
-    } else if (state.targetedInvIndex === null) {
-      item.classList.add('inv-item--idle-targeting');
-    }
-    item.dataset.invId = inv._id;
-    item.appendChild(renderInvTags(inv, index));
-    return item;
-  }
-
-  function renderInvs() {
-    const invsRoot = document.createElement('div');
-    invsRoot.id = 'invs';
-    const invs = getRenderedInvs();
-
-    for (const [index, inv] of invs.entries()) {
-      invsRoot.appendChild(renderInvItem(inv, index));
-    }
-
-    return invsRoot;
-  }
-
-  function render() {
-    clearElement(box);
-    box.appendChild(renderInvs());
-  }
-
-  async function freezeActivePlayback() {
-    logBoundary('freezeActivePlayback', 'start', 'freeze', {
-      activeInvId: state.activeInvId,
-    });
-    if (!state.activeInvId) {
-      return;
-    }
-
-    const inv = state.invs.find((item) => item._id === state.activeInvId);
-    if (!inv) {
-      state.activeInvId = null;
-      state.activeAudEpId = null;
-      return;
-    }
-
-    const playbackTs = setInvPlaybackTs(inv._id, audioPlayer.currentTime);
-    state.activeInvId = null;
-    state.activeAudEpId = null;
-    audioPlayer.pause();
-    audioPlayer.currentTime = playbackTs;
-    render();
-
-    try {
-      await persistInvPlaybackTs(inv._id, playbackTs);
-    } catch (error) {
-      reportError('freezeActivePlayback', 'persistInvPlaybackTs:error', error);
-    }
-  }
-
-  function setTargetedInvIndex(nextIndex) {
-    logBoundary('setTargetedInvIndex', 'start', 'target', {
-      nextIndex,
-      targetedInvIndex: state.targetedInvIndex,
-    });
-    const count = getTargetableInvCount();
-    if (!count) {
-      state.targetedInvIndex = null;
-      trace('target:set', { nextIndex, count, targetedInvIndex: state.targetedInvIndex });
-      render();
-      return;
-    }
-
-    const normalized = ((nextIndex % count) + count) % count;
-    const previous = state.targetedInvIndex;
-    state.targetedInvIndex = normalized;
-    trace('target:set', {
-      previous,
-      nextIndex,
-      normalized,
-      targetedInvId: getTargetedInv() && getTargetedInv()._id,
-      activeInvId: state.activeInvId,
-    });
-    syncAudioPlayerToInv(getTargetedInv()).catch((error) => {
-      trace('syncAudioPlayerToInv:error', {
-        message: error && error.message ? error.message : String(error),
-      });
-      reportError('setTargetedInvIndex', 'syncAudioPlayerToInv:error', error);
-    });
-    render();
-  }
-
-  function handleKeydown(event) {
-    logBoundary('handleKeydown', 'start', 'keydown', {
-      key: event.key,
-      code: event.code,
-    });
-    const tagName = String(event.target && event.target.tagName ? event.target.tagName : '').toUpperCase();
-    if (tagName === 'INPUT' || tagName === 'TEXTAREA' || event.target.isContentEditable) {
-      return;
-    }
-
-    trace('keydown', {
-      key: event.key,
-      code: event.code,
-      ctrlKey: event.ctrlKey,
-      targetedInvId: getTargetedInv() && getTargetedInv()._id,
-      activeInvId: state.activeInvId,
-      activeAudEpId: state.activeAudEpId,
-      paused: audioPlayer.paused,
-      currentTime: audioPlayer.currentTime,
-    });
-
-    if (event.key === ' ' || event.code === 'Space') {
-      event.preventDefault();
-      const targetedInv = getTargetedInv();
-      if (!targetedInv) {
-        trace('space:skip', { reason: 'no-targeted-inv' });
-        return;
-      }
-
-      const linkedAudEp = getLinkedAudEp(targetedInv);
-      if (!linkedAudEp) {
-        trace('space:skip', { reason: 'no-linked-audEp', targetedInvId: targetedInv._id });
-        return;
-      }
-
-      if (state.activeInvId === targetedInv._id && !audioPlayer.paused) {
-        trace('space:toggle-pause', {
-          targetedInvId: targetedInv._id,
-          currentTime: audioPlayer.currentTime,
-        });
-        freezeActivePlayback().catch((error) => {
-          trace('freezeActivePlayback:error', {
-            message: error && error.message ? error.message : String(error),
+          const audEp = await uploadAudio({
+            data: {
+              file,
+            },
+            deps,
           });
-          reportError('handleKeydown', 'freezeActivePlayback:error', error);
-        });
-        return;
-      }
-
-      const resumeTs = getInvPlaybackTs(targetedInv);
-      trace('space:play', {
-        targetedInvId: targetedInv._id,
-        audEpId: linkedAudEp._id,
-        resumeTs,
-        activeInvId: state.activeInvId,
-        paused: audioPlayer.paused,
+          if (audEp && audEp._id) {
+            await createInv({
+              data: {
+                audEpRef: audEp._id,
+              },
+              deps,
+            });
+          }
+          const [nextAudEps, nextInvs] = await Promise.all([
+            loadAudEps({ deps }),
+            loadInvs({ deps }),
+          ]);
+          const nextList = renderList({
+            data: {
+              audEps: nextAudEps,
+              invs: nextInvs,
+            },
+            deps,
+          });
+          shell.frame.querySelector('.inv-list').replaceWith(nextList);
+        } catch (error) {
+          logger.error({
+            phase: 'error',
+            event: 'audio-upload',
+            data: {
+              error,
+            },
+          });
+        } finally {
+          shell.fileInput.value = '';
+        }
       });
-      startInvPlayback(targetedInv, linkedAudEp, resumeTs).catch((error) => {
-        trace('startInvPlayback:error', {
-          message: error && error.message ? error.message : String(error),
-        });
-        reportError('handleKeydown', 'startInvPlayback:error', error);
+      logger.state({
+        phase: 'exit',
+        event: 'init',
+        data: {
+          count: invs.length,
+        },
       });
-      return;
-    }
-
-    if (!event.ctrlKey) {
-      return;
-    }
-
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      trace('target:arrow-down', {
-        activeInvId: state.activeInvId,
-        targetedInvIndex: state.targetedInvIndex,
+    } catch (error) {
+      logger.error({
+        phase: 'error',
+        event: 'init',
+        data: {
+          error,
+        },
       });
-      persistActivePlaybackTs().catch((error) => {
-        trace('persistActivePlaybackTs:error', {
-          message: error && error.message ? error.message : String(error),
-        });
-        reportError('handleKeydown', 'persistActivePlaybackTs:error', error);
-      });
-      if (state.targetedInvIndex === null) {
-        setTargetedInvIndex(0);
-        return;
-      }
-
-      setTargetedInvIndex(state.targetedInvIndex + 1);
-      return;
-    }
-
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      trace('target:arrow-up', {
-        activeInvId: state.activeInvId,
-        targetedInvIndex: state.targetedInvIndex,
-      });
-      persistActivePlaybackTs().catch((error) => {
-        trace('persistActivePlaybackTs:error', {
-          message: error && error.message ? error.message : String(error),
-        });
-        reportError('handleKeydown', 'persistActivePlaybackTs:error', error);
-      });
-      if (state.targetedInvIndex === null) {
-        setTargetedInvIndex(getTargetableInvCount() - 1);
-        return;
-      }
-
-      setTargetedInvIndex(state.targetedInvIndex - 1);
+      shell.frame.appendChild(renderEmptyState({
+        deps,
+      }));
     }
   }
 
-  async function loadState() {
-    logBoundary('loadState', 'start', 'load', {});
-    trace('loadState:begin');
-    const [audEpsResult, invsResult] = await Promise.all([
-      fetchJson('/api/audEps'),
-      fetchJson('/api/invs'),
-    ]);
-
-    state.audEps = Array.isArray(audEpsResult.audEps) ? audEpsResult.audEps : [];
-    state.invs = Array.isArray(invsResult.invs) ? invsResult.invs : [];
-    trace('loadState:done', {
-      audEpsCount: state.audEps.length,
-      invsCount: state.invs.length,
-      targetedInvIndex: state.targetedInvIndex,
-      targetedInvId: getTargetedInv() && getTargetedInv()._id,
-    });
-    if (state.targetedInvIndex !== null && state.targetedInvIndex >= getTargetableInvCount()) {
-      state.targetedInvIndex = getTargetableInvCount() ? getTargetableInvCount() - 1 : null;
-      trace('loadState:retarget', {
-        targetedInvIndex: state.targetedInvIndex,
-        targetedInvId: getTargetedInv() && getTargetedInv()._id,
-      });
-    }
-    logBoundary('loadState', 'done', 'load', {
-      audEpsCount: state.audEps.length,
-      invsCount: state.invs.length,
-      targetedInvIndex: state.targetedInvIndex,
-    });
-    render();
-  }
-
-  async function linkAudioToInv(invId, audEpRef) {
-    logBoundary('linkAudioToInv', 'start', 'link', {
-      invId,
-      audEpRef,
-    });
-    await fetchJson('/api/invs', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+  function bootstrap(ctx) {
+    const nativeFetch = ctx && ctx.deps && ctx.deps.fetch ? ctx.deps.fetch : fetch;
+    void initApp({
+      data: ctx && ctx.data ? ctx.data : {},
+      deps: {
+        document: ctx && ctx.deps && ctx.deps.document ? ctx.deps.document : document,
+        fetch: typeof nativeFetch === 'function' ? nativeFetch.bind(window) : nativeFetch,
       },
-      body: JSON.stringify({
-        invId,
-        audEpRef,
-        ownerId: 'dev001',
-      }),
     });
-    logBoundary('linkAudioToInv', 'done', 'link', {
-      invId,
-      audEpRef,
-    });
-    await loadState();
   }
 
-  async function createInv() {
-    logBoundary('createInv', 'start', 'create', {});
-    await fetchJson('/api/invs', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => bootstrap({
+      deps: {
+        document,
+        fetch,
       },
-      body: JSON.stringify({
-        ownerId: 'dev001',
-      }),
-    });
-    logBoundary('createInv', 'done', 'create', {});
-    await loadState();
-  }
-
-  async function uploadAudio(file) {
-    logBoundary('uploadAudio', 'start', 'upload', {
-      name: file && file.name,
-      size: file && file.size,
-      type: file && file.type,
-    });
-    const bytes = await file.arrayBuffer();
-    const response = await fetch('/api/audio-upload', {
-      method: 'POST',
-      headers: {
-        'Content-Type': file.type || 'application/octet-stream',
-        'X-Audio-Name': encodeURIComponent(file.name),
-        'X-Audio-Size': String(file.size),
-        'X-Audio-Owner': 'dev001',
-      },
-      body: bytes,
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Upload failed: ${response.status} ${text}`);
-    }
-
-    const body = await response.json();
-    logBoundary('uploadAudio', 'done', 'upload', {
-      entryId: body && body.entry && body.entry._id,
-    });
-    return body.entry;
-  }
-
-  if (!stage || !box || !audioButton || !invButton) {
+    }), { once: true });
     return;
   }
 
-  invButton.addEventListener('click', () => {
-    createInv().catch((error) => {
-      reportError('bootstrap', 'createInv:error', error);
-    });
-  });
-
-  document.addEventListener('keydown', handleKeydown);
-
-  audioButton.hidden = true;
-
-  loadState().catch((error) => {
-    reportError('bootstrap', 'loadState:error', error);
-    render();
+  bootstrap({
+    deps: {
+      document,
+      fetch,
+    },
   });
 })();

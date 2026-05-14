@@ -1,0 +1,11 @@
+
+//main app page
+
+```text
+data: {}
+ui: {}
+deps: {}
+```
+plain off white background
+
+inv add btn & inv item list group

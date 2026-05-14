@@ -4,20 +4,13 @@
     "audEpRefs": [
       "audEp-dev001-001"
     ],
-    "lastPlayTs": 13.76733
+    "lastPlayTs": 0
   },
   {
     "_id": "inv-dev001-002",
     "audEpRefs": [
-      "audEp-dev001-003"
-    ],
-    "lastPlayTs": 28.679194
-  },
-  {
-    "_id": "inv-dev001-003",
-    "audEpRefs": [
       "audEp-dev001-002"
     ],
-    "lastPlayTs": 2.856124
+    "lastPlayTs": 0
   }
 ]

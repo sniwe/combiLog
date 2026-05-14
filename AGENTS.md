@@ -1,153 +1,84 @@
-﻿# AGENTS.md
+# AGENTS.md
 
-## Scope And Paths
+## Thread Policy
 
-Use dynamic roots. Keep portable.
+- Use `caveman` in `full` mode by default for every reply in this repo thread.
+- Apply `karpathy-guidelines` continuously to all coding, review, and refactor work.
+- Keep both active until the user explicitly asks for a different style or workflow.
 
-- `USER_ROOT`: user home directory
-- `WORKSPACE_ROOT`: current project root
-- `MGMT_DIR`: `${WORKSPACE_ROOT}\mgmt`
-- `PROJMAP_DIR`: `${MGMT_DIR}\projMap`
-- `SRC_DIR`: `${WORKSPACE_ROOT}\src`
-- `BACKEND_DIR`: `${SRC_DIR}\backend`
-- `FRONTEND_DIR`: `${SRC_DIR}\frontend`
-- `PUBLIC_DIR`: `${SRC_DIR}\public`
-- `GLOBAL_MGMT_DIR`: `${USER_ROOT}\mgmt`
-- `SESSIONS_ROOT`: `${USER_ROOT}\.codex\sessions`
+## Bootstrap Commands
 
-Resolve paths from these variables first.
+- Treat a user prompt that begins with `::gacpp` as the bootstrap command for the existing `gacpp` flow.
+- `gacpp` means `git add`, `git commit`, `git push`, then Wix publish with the remote, full-confirm bypass path.
+- Treat a user prompt that begins with `::cFetch` as the bootstrap command for the working collection fetch flow.
+- `cFetch` means refresh the local mgmt collection logs using only the fetches that still succeed.
 
-## Default Style
+## Memory Harness
 
-- Use `caveman` `full` unless user asks otherwise.
-- Keep `karpathy-guidelines`: simple, surgical, verified.
+- Keep `mgmt/logs/featureList.md` current when implemented behavior changes materially.
+- Append a dated, high-signal entry to `mgmt/logs/actionLog.md` after each meaningful development session.
 
-## Machine Gate
+## DevArc Management
 
-Before changes, verify setup:
+- Define a `devArc` as any user prompt that begins with `developing <target(s)>`.
+- A devArc stays active until the user sends a prompt that begins with `success`.
+- On devArc initialization, create a `.txt` file under `C:\chinLog\mgmt\devSessions\YYMMDD\` where `YYMMDD` is the current date.
+- Name the file by ordinal within that date folder: `1.txt`, `2.txt`, and so on.
+- The file front matter must summarize the functionality being developed and stay updated as the request evolves.
+- The file body must use hierarchical, indented step numbering for successive prompts, and each step may contain arbitrarily nested substeps for applied-code-edit specifics.
+- Allow user edits inside the file to add `refine`, `debug`, and similar directives that target a specific substep at any nesting depth.
 
-- `${GLOBAL_MGMT_DIR}\scripts\ensure-machine-setup.ps1`
+## Code Authoring Specs
 
-If setup flag bad, run setup before continue.
-
-## Project Init Rules
-
-- Keep project files under `${SRC_DIR}` unless file belongs in `${MGMT_DIR}` or root `AGENTS.md`.
-- Create and keep `${WORKSPACE_ROOT}\.gitignore`.
-- Do not use `${MGMT_DIR}\toDo\`, `${MGMT_DIR}\errFix\`, or `${MGMT_DIR}\logs\` for this project.
-- All dirs will contain a top-level `README.md`.
-
-## Source Layout
-
-- Prefer vanilla `.js` unless user asks otherwise.
-- Use hierarchical modular folders with clear separation of concerns.
-- Use aggregator files for composition and import/export boundaries.
-- Keep modules focused and small.
-- Apply Context Object Pattern for authored JS functions:
-  - every function accepts one `ctx` argument
-  - `ctx.data` for runtime inputs and config
-  - `ctx.ui` for optional UI refs
-  - `ctx.deps` for injected capabilities and all side effects
+- Use vanilla JavaScript unless the user asks for another language.
+- Keep modules focused and small; prefer leaf modules over monoliths.
+- Follow the Context Object Pattern for authored functions:
   - `@param {{ data?: object, ui?: object, deps: object }} ctx`
   - `const { data = {}, ui = {}, deps } = ctx`
-- Read inputs only from `ctx.data`.
-- Use only `ctx.deps` for side effects and async work.
-- If a needed capability is missing in `deps`, state a brief Dep Proposal first.
+- Route side effects through `ctx.deps` only.
+- Avoid new abstractions, config, or flexibility that the task did not ask for.
+- Touch only the files and lines needed for the request.
+- Do not refactor unrelated code, comments, or formatting.
+- Keep project source under `src/`; keep management assets under `mgmt/`.
+- Preserve existing module organization across `backend`, `frontend`, and `public`.
+- Keep `package.json` as the root command entrypoint when nested package scripts need forwarding.
 
-## Logging Pipeline
+## Project Refactor Bootstrap
 
-- Use the shared logger in `${PUBLIC_DIR}\logger.js` for all new runtime logging.
-- Backend code should create or receive a logger via `deps.logger` and emit structured events, states, and errors instead of raw `console.log` calls.
-- Browser code should use `createBrowserTransport()` plus a browser logger instance so logs are batched to `POST /api/logs` and echoed in the launching terminal.
-- Keep terminal output as the canonical runtime log stream for this app.
-- Keep a single run log at `${MGMT_DIR}\logs\current-run.log`; `npm start` clears it at startup and appends the current run as logs stream in.
-- Log at the highest useful boundary, then add deeper logs only when they change control flow, mutate state, or throw.
-- Do not log raw buffers, request bodies, DOM trees, or injected dependency objects; log safe summaries only.
-- Prefer `logCtx(ctx, logger, meta)` or logger boundary helpers when authoring new ctx-based functions.
-- If new runtime-visible logging is added, wire it through the existing browser relay and server terminal print path rather than adding a new sink.
+- Scope refactors by current working directory.
+- If working inside this repo, keep refactor work project-local.
+- Keep refactor changes under `src/` unless the user explicitly asks otherwise.
+- Preserve the existing `backend`, `frontend`, and `public` layout.
+- Prefer small, concern-separated files and nested subdirectories over large modules.
+- Reuse and update root forwarding scripts when nested operational entrypoints change.
+- Do not introduce `projMap` or global registry machinery here unless explicitly requested.
 
-## Dev Tunnel
+## Operational Precedence
 
-- Development uses Cloudflare free quick tunnels through `cloudflared`.
-- Use `cloudflared tunnel --url http://localhost:PORT` to expose the local dev server.
-- Use the installed binary path or `PATH`; on this machine the confirmed install is `C:\Program Files (x86)\cloudflared\cloudflared.exe`.
-- Put tunnel orchestration in `src/backend/dev-tunnel/`.
-- Module must capture and surface only the dynamic `trycloudflare.com` URL in terminal output.
-- Do not surface routine `cloudflared` chatter in terminal.
-- Keep tunnel logic dev-only. No production tunnel config for this project.
-- When server runs, launch tunnel automatically from local URL without extra user step.
-- Fix tunnel launch by using the real binary. Do not suppress missing-binary failures with no-op or disabled tunnel code.
-- Prefer the documented compatible tunnel transport (`http2`) when it makes launch reliable on this machine. Do not replace it with a no-op fallback.
+When instructions overlap, apply them in this order:
 
-## Blank Page Server
-
-- Root `package.json` must expose `npm start` for local server and `npm run dev` as an alias for same auto-tunneled server.
-- Blank page HTTP server lives in `src/backend/server/`.
-- Serve `src/public/index.html` at `/`, `src/frontend/app.js` at `/app.js`, and `src/frontend/style.css` at `/style.css`.
-- Keep page blank by default. No app features beyond server boot and tunnel wiring.
-
-## Project Bootstrap
-
-Keep these files under `${MGMT_DIR}\projMap\`:
-
-- `threads\README.md`
-- `threads\resolve-init-thread.ps1`
-- `threads\current-thread.json`
-- `threads\all-threads.json`
-
-## Map And Thread State
-
-- Do not maintain `${PROJMAP_DIR}\map.json` for this project.
-- Keep runtime thread cache in `${PROJMAP_DIR}\threads\`.
-- Keep current thread in `current-thread.json`.
-- Keep all project threads in `all-threads.json`.
-
-## Plain English Project File
-
-- Project intent lives in `${PROJMAP_DIR}\project.txt`.
-- That file is the monolithic plain-english project spec for autonomous AI agents.
-- The file uses nested hierarchical blocks where nesting means subordinate relationship.
-- Front matter lives in multiline fenced code blocks placed above each block body.
-- The front matter fence and its contents inherit the indent of the block they annotate.
-- Nested block front matter must stay visually aligned with that nested block.
-- Each block's front matter must stay inside its own fenced code block.
-- Front matter is bottom-up: deepest applicable nesting carries the most detail.
-- Superordinate blocks show only the details not already covered by deeper nesting.
-- Do not duplicate parent block values in child block front matter.
-- Keep child block front matter focused on child-specific detail, UI refs, and deps only.
-- AI may edit only front matter in `project.txt`.
-- AI must never touch non-front matter content in `project.txt`.
-- Developer owns all non-front matter content and keeps it authoritative.
-- Front matter shape will be defined in future prompts and must be followed exactly once provided.
-- Front matter may contain implementation specifics for generated code, including data, UI selectors, styling params, and deps for that block.
-- `data` in front matter is not style data. It refers to backend data collections for the block under `${WORKSPACE_ROOT}\src\backend` as SQL-like `.json` stores associated with the block.
-- Leave `data` blank until those backend collections are actually implemented. Once implemented, include the actual collection path and schema properties needed by the block.
-- Apply data hiding to front matter: keep internal implementation details contained there, expose only the minimal safe behavior to the rest of the file.
-- Do not leak block internals into non-front matter content.
-
-## Thread Context
-
-- When current Codex thread context usage reaches 90%, compact context immediately before continuing work.
-- Compact by preserving active project rules, current task state, latest file changes, and unresolved decisions.
-- Drop stale exploration detail, duplicate logs, and completed intermediate checks first.
-
-## `.gitignore`
-
-- Ignore generated state and common junk.
-- Keep source and governed mgmt files tracked.
+1. User prompt and explicit task requirements
+2. Context Object Pattern for function signatures and side-effect boundaries
+3. Project module organization and code authoring rules
+4. Dynamic path rules
+5. This `AGENTS.md`
+6. Existing repo conventions that do not conflict with the above
 
 ## Dynamic Path Rules
 
-- Never hardcode a different workspace root.
-- If a path is missing, fail with the resolved absolute path.
+- Never hardcode a single project root when context is dynamic.
+- Build paths from `USER_ROOT`, `WORKSPACE_ROOT`, `MGMT_DIR`, `SRC_DIR`, `BACKEND_DIR`, `FRONTEND_DIR`, `PUBLIC_DIR`, `GLOBAL_MGMT_DIR`, and `SESSIONS_ROOT`.
+- Resolve paths from those variables first, then from explicit absolute paths provided by the user.
+- When following `C:\Users\Qub\AGENTS.md`, resolve its referenced files under `C:\Users\Qub\mgmt`, especially the minimal context-object-pattern source.
+- If a path is missing, fail with a clear message that includes the resolved absolute path.
+- Prefer dynamic path joins over copied literals.
 
-## Minimal Path Snippet
+## Minimal Runtime Snippet
 
 ```powershell
 $USER_ROOT = if ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
 $WORKSPACE_ROOT = (Get-Location).Path
 $MGMT_DIR = Join-Path $WORKSPACE_ROOT 'mgmt'
-$PROJMAP_DIR = Join-Path $MGMT_DIR 'projMap'
 $SRC_DIR = Join-Path $WORKSPACE_ROOT 'src'
 $BACKEND_DIR = Join-Path $SRC_DIR 'backend'
 $FRONTEND_DIR = Join-Path $SRC_DIR 'frontend'

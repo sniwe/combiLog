@@ -308,6 +308,159 @@ function normalizeInvEntry(ctx) {
   };
 }
 
+function resolveAudEpMediaPath(ctx, entry) {
+  const { data = {} } = ctx;
+  const assets = resolveAssets(ctx);
+  const fileName = path.basename(
+    String(data.fileName || (data.mediaUrl ? String(data.mediaUrl).split('/').pop() : '') || '').trim()
+  );
+
+  if (!fileName) {
+    return null;
+  }
+
+  return path.join(assets.mediaDir, fileName);
+}
+
+async function unlinkFileIfExists(ctx) {
+  const { data = {}, deps = {} } = ctx;
+  const fsApi = deps.fs || fs;
+  const filePath = String(data.filePath || '').trim();
+  if (!filePath) {
+    return false;
+  }
+
+  try {
+    await fsApi.unlink(filePath);
+    return true;
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function removeInvEntryById(ctx) {
+  const { data = {}, deps = {} } = ctx;
+  const invId = String(data.invId || '').trim();
+  if (!invId) {
+    return null;
+  }
+
+  const collections = await ensureCollectionsStore(ctx);
+  const invs = await readJsonCollection({
+    data: {
+      filePath: collections.invsPath,
+      defaultValue: [],
+    },
+    deps,
+  });
+  const normalizedInvs = Array.isArray(invs)
+    ? invs.map((entry) => normalizeInvEntry({ data: { entry } }))
+    : [];
+  const index = normalizedInvs.findIndex((entry) => entry._id === invId);
+  if (index < 0) {
+    return null;
+  }
+
+  const [removed] = normalizedInvs.splice(index, 1);
+  await writeJsonFile({
+    data: {
+      filePath: collections.invsPath,
+      value: normalizedInvs,
+    },
+    deps,
+  });
+
+  return removed;
+}
+
+async function removeAudEpEntryById(ctx) {
+  const { data = {}, deps = {} } = ctx;
+  const audEpId = String(data.audEpId || '').trim();
+  if (!audEpId) {
+    return null;
+  }
+
+  const collections = await ensureCollectionsStore(ctx);
+  const audEps = await readJsonCollection({
+    data: {
+      filePath: collections.audEpsPath,
+      defaultValue: [],
+    },
+    deps,
+  });
+  const normalizedAudEps = Array.isArray(audEps) ? audEps.map((entry) => ({ ...entry })) : [];
+  const index = normalizedAudEps.findIndex((entry) => String(entry && entry._id || '').trim() === audEpId);
+  if (index < 0) {
+    return null;
+  }
+
+  const [removed] = normalizedAudEps.splice(index, 1);
+  await writeJsonFile({
+    data: {
+      filePath: collections.audEpsPath,
+      value: normalizedAudEps,
+    },
+    deps,
+  });
+
+  const mediaPath = resolveAudEpMediaPath({
+    data: {
+      root: data.root,
+      fileName: removed && removed.fileName,
+      mediaUrl: removed && removed.mediaUrl,
+    },
+  });
+  if (mediaPath) {
+    await unlinkFileIfExists({
+      data: {
+        filePath: mediaPath,
+      },
+      deps,
+    });
+  }
+
+  const invs = await readJsonCollection({
+    data: {
+      filePath: collections.invsPath,
+      defaultValue: [],
+    },
+    deps,
+  });
+  const normalizedInvs = Array.isArray(invs)
+    ? invs.map((entry) => normalizeInvEntry({ data: { entry } }))
+    : [];
+  let invsDirty = false;
+  for (const inv of normalizedInvs) {
+    const nextRefs = Array.isArray(inv.audEpRefs)
+      ? inv.audEpRefs.filter((ref) => String(ref || '').trim() !== audEpId)
+      : [];
+    if (nextRefs.length !== inv.audEpRefs.length) {
+      inv.audEpRefs = nextRefs;
+      invsDirty = true;
+    }
+    if (inv.audEpRef && String(inv.audEpRef).trim() === audEpId) {
+      delete inv.audEpRef;
+      invsDirty = true;
+    }
+  }
+
+  if (invsDirty) {
+    await writeJsonFile({
+      data: {
+        filePath: collections.invsPath,
+        value: normalizedInvs,
+      },
+      deps,
+    });
+  }
+
+  return removed;
+}
+
 function readRequestBody(ctx) {
   const { data = {} } = ctx;
   return new Promise((resolve, reject) => {
@@ -720,6 +873,96 @@ async function handleRequest(ctx) {
         'application/json; charset=utf-8',
         JSON.stringify({ ok: false, error: error.message }, null, 2),
         'invs-write-error',
+        {
+          error: error.message,
+        }
+      );
+    }
+    return;
+  }
+
+  if (req.method === 'DELETE' && pathname.startsWith('/api/invs/')) {
+    try {
+      const invId = decodeURIComponent(pathname.slice('/api/invs/'.length));
+      const entry = await removeInvEntryById({
+        data: {
+          invId,
+        },
+        deps: ctx.deps,
+      });
+      if (!entry) {
+        respond(
+          404,
+          'application/json; charset=utf-8',
+          JSON.stringify({ ok: false, error: 'Inv not found' }, null, 2),
+          'invs-delete-miss',
+          {
+            invId,
+          }
+        );
+        return;
+      }
+
+      respond(
+        200,
+        'application/json; charset=utf-8',
+        JSON.stringify({ ok: true, entry }, null, 2),
+        'invs-delete',
+        {
+          _id: entry._id,
+        }
+      );
+    } catch (error) {
+      respond(
+        500,
+        'application/json; charset=utf-8',
+        JSON.stringify({ ok: false, error: error.message }, null, 2),
+        'invs-delete-error',
+        {
+          error: error.message,
+        }
+      );
+    }
+    return;
+  }
+
+  if (req.method === 'DELETE' && pathname.startsWith('/api/audEps/')) {
+    try {
+      const audEpId = decodeURIComponent(pathname.slice('/api/audEps/'.length));
+      const entry = await removeAudEpEntryById({
+        data: {
+          audEpId,
+        },
+        deps: ctx.deps,
+      });
+      if (!entry) {
+        respond(
+          404,
+          'application/json; charset=utf-8',
+          JSON.stringify({ ok: false, error: 'Audio entry not found' }, null, 2),
+          'audEps-delete-miss',
+          {
+            audEpId,
+          }
+        );
+        return;
+      }
+
+      respond(
+        200,
+        'application/json; charset=utf-8',
+        JSON.stringify({ ok: true, entry }, null, 2),
+        'audEps-delete',
+        {
+          _id: entry._id,
+        }
+      );
+    } catch (error) {
+      respond(
+        500,
+        'application/json; charset=utf-8',
+        JSON.stringify({ ok: false, error: error.message }, null, 2),
+        'audEps-delete-error',
         {
           error: error.message,
         }
@@ -1183,5 +1426,7 @@ module.exports = {
   resolveAssets,
   resolveCollections,
   resolveRoot,
+  removeAudEpEntryById,
+  removeInvEntryById,
   startServer,
 };

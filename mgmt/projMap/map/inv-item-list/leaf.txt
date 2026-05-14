@@ -1,0 +1,20 @@
+//inv item list
+    style
+        20px from page top
+        min height 20px
+        width 100% with 20px space left from page edges
+        5px rounded corners
+        20% opac black border on liswt backgroud
+
+    data
+        displays items from C:\Users\Qub\combiLog\src\backend\collections\invs.json
+        if none, displays empty at min height
+            no inner text when empty
+
+elements
+    each item of the list
+        min height 20px
+        audEp title text
+            small text - nothing dramatic
+            house on size max-content box with 3px rounded corners lgiht grey background
+            

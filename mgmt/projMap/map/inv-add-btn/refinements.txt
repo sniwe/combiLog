@@ -1,0 +1,3 @@
+clicking the inv add btn must open the audio file picker
+inv add btn must not wait for inv load before opening the picker
+inv add btn must not stop at upload only; it must also create the inv item for the uploaded audio

@@ -1,26 +1,18 @@
 [
   {
     "_id": "audEp-dev001-001",
-    "name": "'the'_stories.mp3",
+    "name": "869 ｜当AI让技能变成“廉价商品”，你还剩什么？.mp3",
     "mimeType": "audio/mpeg",
-    "sizeBytes": 994176,
+    "sizeBytes": 9248017,
     "fileName": "audEp-dev001-001.mp3",
     "mediaUrl": "/media/audEp-dev001-001.mp3"
   },
   {
     "_id": "audEp-dev001-002",
-    "name": "869 ｜当AI让技能变成“廉价商品”，你还剩什么？.mp3",
+    "name": "'the'_stories.mp3",
     "mimeType": "audio/mpeg",
-    "sizeBytes": 9248017,
+    "sizeBytes": 994176,
     "fileName": "audEp-dev001-002.mp3",
     "mediaUrl": "/media/audEp-dev001-002.mp3"
-  },
-  {
-    "_id": "audEp-dev001-003",
-    "name": "'the'_story_explanation.mp3",
-    "mimeType": "audio/mpeg",
-    "sizeBytes": 1906560,
-    "fileName": "audEp-dev001-003.mp3",
-    "mediaUrl": "/media/audEp-dev001-003.mp3"
   }
 ]
