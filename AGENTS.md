@@ -8,8 +8,8 @@
 
 ## Bootstrap Commands
 
-- Treat a user prompt that begins with `::gacpp` as the bootstrap command for the existing `gacpp` flow.
-- `gacpp` means `git add`, `git commit`, `git push`, then Wix publish with the remote, full-confirm bypass path.
+- Treat a user prompt that begins with `::gacp` as the bootstrap command for the existing `gacp` flow.
+- `gacp` means `git add`, `git commit`, and `git push` with the remote, full-confirm bypass path.
 - Treat a user prompt that begins with `::cFetch` as the bootstrap command for the working collection fetch flow.
 - `cFetch` means refresh the local mgmt collection logs using only the fetches that still succeed.
 
@@ -17,6 +17,14 @@
 
 - Keep `mgmt/logs/featureList.md` current when implemented behavior changes materially.
 - Append a dated, high-signal entry to `mgmt/logs/actionLog.md` after each meaningful development session.
+
+## Restricted Dirs
+
+- Do not use `${MGMT_DIR}\errFix\` or `${MGMT_DIR}\DL\` for this project.
+
+## Directory Scan
+
+- Auto-scan for new directories and apply the `README.md` rule as soon as a new directory is detected.
 
 ## DevArc Management
 
